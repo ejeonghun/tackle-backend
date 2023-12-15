@@ -2,6 +2,8 @@ package com.example.tackle.replies.service;
 
 import com.example.tackle._enum.CustomExceptionCode;
 import com.example.tackle.exception.CustomException;
+import com.example.tackle.member.entity.Member;
+import com.example.tackle.member.repository.MemberRepository;
 import com.example.tackle.replies.dto.RepliesDto;
 import com.example.tackle.replies.entity.Replies;
 import com.example.tackle.replies.repository.RepliesRepository;
@@ -24,25 +26,27 @@ public class RepliesServiceImpl implements RepliesService {
 
     private final RepliesRepository repliesRepository;
     private final VoteResultRepository voteResultRepository;
+    private final MemberRepository memberRepository;
 
     public boolean create(RepliesDto dto) {
-        boolean hasVoted = voteOk(String.valueOf(dto.getIdx()), dto.getPostId());
+        Member member = memberRepository.findById(dto.getIdx())
+                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND));
 
-        if (hasVoted) {
-            Replies replies = Replies.builder()
-                    .idx(dto.getIdx())
-                    .postId(dto.getPostId())
-                    .comment(dto.getComment())
-                    .createdAt(LocalDateTime.now())
-                    .build();
-
-            repliesRepository.save(replies);
-            return true;
-        } else {
+        if (!voteOk(dto.getIdx(), dto.getPostId())) {
             throw new CustomException(CustomExceptionCode.NOT_VOTED);
         }
-    }
 
+        Replies replies = Replies.builder()
+                .idx(dto.getIdx())
+                .nickname(member.getNickname())
+                .postId(dto.getPostId())
+                .comment(dto.getComment())
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        repliesRepository.save(replies);
+        return true;
+    }
     public boolean voteOk(String idx, Long postId) {
         // 사용자가 해당 게시글에 투표 참여했는지 확인
         Optional<VoteResult> voteResult = voteResultRepository.findByIdxAndPostId(idx, postId);
@@ -76,6 +80,7 @@ public class RepliesServiceImpl implements RepliesService {
         return RepliesDto.builder()
                 .repliesId(replies.getRepliesId())
                 .idx(replies.getIdx())
+                .nickname(replies.getNickname())
                 .postId(replies.getPostId())
                 .comment(replies.getComment())
                 .createdAt(replies.getCreatedAt())
@@ -90,13 +95,16 @@ public class RepliesServiceImpl implements RepliesService {
     }
 
     @Override
-    public List<RepliesDto> getMyRepliesInfo(Long idx) {
-        List<Replies> myRepliesList = repliesRepository.findAllByIdx(idx);
+    public List<RepliesDto> getMyRepliesInfo(String email) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_USER));
+
+        List<Replies> myRepliesList = repliesRepository.findByIdx(member.getIdx());
         return RepliesDtoList(myRepliesList);
     }
 
     @Override
-    public boolean delete(Long repliesId, Long idx) {
+    public boolean delete(Long repliesId, String idx) {
         Optional<Replies> repliesOpt = repliesRepository.findById(repliesId);
 
         if (repliesOpt.isPresent()) {
@@ -116,7 +124,7 @@ public class RepliesServiceImpl implements RepliesService {
     }
 
     @Override
-    public boolean update(Long repliesId, Long idx, RepliesDto dto) {
+    public boolean update(Long repliesId, String idx, RepliesDto dto) {
         Replies replies = repliesRepository.findAllByRepliesIdAndIdx(repliesId, idx)
                 .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_REPLIES));
 
@@ -128,7 +136,6 @@ public class RepliesServiceImpl implements RepliesService {
         }
         throw new RuntimeException();
     }
-
 
 
 

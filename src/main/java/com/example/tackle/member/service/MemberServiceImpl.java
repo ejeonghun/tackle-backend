@@ -1,5 +1,6 @@
 package com.example.tackle.member.service;
 
+import com.example.tackle.member.dto.MemberDto;
 import com.example.tackle.member.repository.MemberRepository;
 import com.example.tackle._enum.CustomExceptionCode;
 import com.example.tackle.auth.JwtTokenProvider;
@@ -18,11 +19,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -38,40 +41,33 @@ public class MemberServiceImpl implements MemberService {
 
     /**
      * 1. 로그인 요청으로 들어온 ID, PWD 기반으로 Authentication 객체 생성
-     * 2. authenticate() 메서드를 통해 요청된 Member에 대한 검증이 진행 => loadUserByUsername 메서드를 실행. 해당 메서드는 검증을 위한 유저 객체를 가져오는 부분으로써, 어떤 객체를 검증할 것인지에 대해 직접 구현
-     * 3. 검증이 정상적으로 통과되었다면 인증된 Authentication객체를 기반으로 JWT 토큰을 생성
+     * 2. authenticate() 메서드를 통해 요청된 Member 에 대한 검증이 진행 => loadUserByUsername 메서드를 실행.
+     * 해당 메서드는 검증을 위한 유저 객체를 가져오는 부분으로써, 어떤 객체를 검증할 것인지에 대해 직접 구현
+     * 3. 검증이 정상적으로 통과되었다면 인증된 Authentication 객체를 기반으로 JWT 토큰을 생성
+     * @author dltldud2kr
      */
     @Transactional
     public TokenDto login(String email, String memberIdx) {
-        log.info("findByUser before");
         Optional<Member> optionalMember =  memberRepository.findById(memberIdx);
         String email1 = optionalMember.get().getEmail();
-        System.out.println("email = " + email);
-        System.out.println("email1 = " + email1);
-        if(email.equals(email1)){
-            System.out.println("동일한 값");
-        } else {
-            System.out.println("동일하지않은값");
-        }
-
 
         memberRepository.findById(memberIdx)
                 .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_EMAIL));
-        log.info("UsernamePasswordAuthenticationToken before");
+
+        //사용자 인증 정보를 담은 토큰을 생성함. (이메일, 멤버 인덱스 정보 포함 )
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(email, memberIdx);
 
-        log.info("testest");
+        //authenticationManagerBuilder를 사용하여 authenticationToken을 이용한 사용자의 인증을 시도합니다.
+        // 여기서 실제로 로그인 발생  ( 성공: Authentication 반환 //   실패 : Exception 발생
         Authentication authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
-        log.info("authentication after");
 
-        //이게 문제.
+        // 인증이 된 경우 JWT 토큰을 발급  (요청에 대한 인증처리)
         TokenDto tokenDto = jwtTokenProvider.generateToken(authentication);
-        log.info(tokenDto.getAccessToken());
+
         if (tokenDto.getAccessToken().isEmpty()){
             log.info(tokenDto.getAccessToken());
-            log.info("token empty");
         }
-        log.info("generateToken after");
+
         return tokenDto;
     }
 
@@ -94,7 +90,7 @@ public class MemberServiceImpl implements MemberService {
     }
 
     @Override
-    public String getReturnAccessToken(String code) {
+    public String getReturnAccessToken(String code, HttpServletRequest request) {
         String access_token = "";
         String refresh_token = "";
         String reqURL = "https://kauth.kakao.com/oauth/token";
@@ -112,8 +108,21 @@ public class MemberServiceImpl implements MemberService {
             StringBuilder sb = new StringBuilder();
             sb.append("grant_type=authorization_code");
 //           sb.append("&client_id=b22a0873d0ccefbc5f331106fa7b9287");  // REST API 키
+
+            String origin = request.getHeader("Origin"); //요청이 들어온 Origin을 가져옵니다.
             sb.append("&client_id=ccf25614050bf5afb0bf4c82541cebb8");  // REST API 키
-            sb.append("&redirect_uri=http://localhost:8080/auth/kakao/callback"); // 앱 CALLBACK 경로
+
+            sb.append("&redirect_uri=http://localhost:8080/auth/kakao/callback");
+            // 테스트 서버, 퍼블리싱 서버 구분
+            /*
+            if("http://localhost:8080".equals(origin)){
+
+                sb.append("&redirect_uri=http://localhost:8080/auth/kakao/callback"); // 앱 CALLBACK 경로
+            } else {
+                sb.append("&redirect_uri=https://app.lunaweb.dev/auth/kakao/callback"); // 다른 경로
+            }
+
+             */
             sb.append("&code=" + code);
             bw.write(sb.toString());
             bw.flush();
@@ -220,38 +229,19 @@ public class MemberServiceImpl implements MemberService {
                     .build();
             memberRepository.save(member);
 
-
-
-//
-//            log.info("findByUser before");
-//            Optional<Member> optionalMember =  memberRepository.findById(memberIdx);
-//            String email1 = optionalMember.get().getEmail();
-//            System.out.println("email = " + email);
-//            System.out.println("email1 = " + email1);
-//            if(email.equals(email1)){
-//                System.out.println("동일한 값");
-//            } else {
-//                System.out.println("동일하지않은값");
-//            }
-//
-////
-//            memberRepository.findById(memberIdx)
-//                    .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_EMAIL));
-//            log.info("UsernamePasswordAuthenticationToken before");
+            //사용자 인증 정보를 담은 토큰을 생성함. (이메일, 멤버 인덱스 정보 포함 )
             UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(email, memberIdx);
 
-
+            //authenticationManagerBuilder를 사용하여 authenticationToken을 이용한 사용자의 인증을 시도합니다.
+            // 여기서 실제로 로그인 발생  ( 성공: Authentication 반환 //   실패 : Exception 발생
             Authentication authentication = authenticationManagerBuilder.getObject().authenticate(authenticationToken);
-            log.info("authentication after");
-
-            //이게 문제.
+            // 인증이 된 경우 JWT 토큰을 발급  (요청에 대한 인증처리)
             TokenDto tokenDto = jwtTokenProvider.generateToken(authentication);
             log.info(tokenDto.getAccessToken());
             if (tokenDto.getAccessToken().isEmpty()){
                 log.info(tokenDto.getAccessToken());
                 log.info("token empty");
             }
-            log.info("generateToken after");
             return tokenDto;
 
 
@@ -268,5 +258,54 @@ public class MemberServiceImpl implements MemberService {
 
         return byEmail.orElse(null);
     }
+
+
+    // 관리자 회원 리스트
+    public List<Member> getMemberList(String access_token) {
+        if (!access_token.isEmpty()) {
+            Member member = memberRepository.findByEmail(access_token)
+                    .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND));
+
+            if (member.getRole() == 1) {
+                return memberRepository.findAll();
+            } else {
+                throw new CustomException(CustomExceptionCode.UNAUTHORIZED_USER);
+            }
+        } else {
+            throw new CustomException(CustomExceptionCode.UNAUTHORIZED_USER);
+        }
+    }
+
+    public MemberDto getMemberInfo(String access_token) {
+        if (!access_token.isEmpty()) {
+            Member member = memberRepository.findByEmail(access_token)
+                    .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND));
+
+            // Entity를 Dto로 변환
+            MemberDto memberDto = new MemberDto();
+            memberDto.setPoint(member.getPoint());
+            memberDto.setNickname(member.getNickname());
+            memberDto.setRegAt(member.getRegDt());
+            return memberDto;
+        } else {
+            throw new CustomException(CustomExceptionCode.NOT_FOUND);
+        }
+    }
+
+    @Override
+    public boolean update(String idx, Member dto) {
+        Member member = memberRepository.findById(idx)
+                .orElseThrow(() -> new CustomException(CustomExceptionCode.UNAUTHORIZED_USER));
+
+        if (member.getIdx().equals(idx) && !memberRepository.existsByNickname(dto.getNickname())) {
+            member.setNickname(dto.getNickname());              // existsByNickname 해당 닉네임의 존재 여부 확인
+            memberRepository.save(member);
+            return true;
+        }
+
+        throw new CustomException(CustomExceptionCode.DUPLICATED);
+    }
+
+
 
 }

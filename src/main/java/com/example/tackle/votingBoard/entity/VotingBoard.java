@@ -22,12 +22,14 @@ public class VotingBoard {
     private String idx;           //회원 idx
     private Long categoryId;
     private String title;
+    private String nickname;
     private String content;
     @Enumerated(EnumType.STRING)
     private VotingStatus status;      // 진행중, 종료 enum 타입 고려해볼것
     private String votingImgUrl;
     private Long votingResult;
     private Long totalBetAmount;
+    private Long votingAmount;
     private byte votingDeadLine;
 
     private LocalDateTime createdAt;

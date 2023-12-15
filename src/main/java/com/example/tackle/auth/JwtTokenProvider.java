@@ -23,9 +23,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
+ * @author 이시영
  * JwtTokenProvider는 토큰 생성, 토큰 복호화 및 정보 추출, 토큰 유효성 검증의 기능이 구현된 클래스.
- * @author rimsong
- * application.properties에 jwt.secret: 값을 넣어 설정 추가해준 뒤 사용합니다.
+  * application.properties에 jwt.secret: 값을 넣어 설정 추가해준 뒤 사용합니다.
  * jwt.secret는 토큰의 암호화, 복호화를 위한 secret key로서 이후 HS256알고리즘을 사용하기 위해, 256비트보다 커야합니다.
  * 알파벳이 한 단어당 8bit니, 32글자 이상이면 됩니다! 너무 짧으면 에러가 뜹니다.
  */
@@ -36,33 +36,27 @@ import java.util.stream.Collectors;
 public class JwtTokenProvider {
     @Value("${spring.jwt.secret}")
     private String secretKey;
-
     private final MemberRepository memberRepository;
-
 
     // 유저 정보를 가지고 AccessToken, RefreshToken 을 생성하는 메서드
     public TokenDto generateToken(Authentication authentication) {
         // 권한 가져오기
-        log.info("generateToken method in");
         String authorities = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.joining(","));
-        log.info("1");
 
         long now = (new Date()).getTime();
+
         // Access Token 생성
-        // 2시간만 유지합니다.
-        log.info("2");
+        // 1시간만 유지합니다.
 //        Date accessTokenExpiresIn = new Date(now + (5 * 60 * 1000)); //5분
-        Date accessTokenExpiresIn = new Date(now + (2 * 60 * 60 * 1000));
-        log.info("3");
+        Date accessTokenExpiresIn = new Date(now + (1 * 60 * 60 * 1000));
         String accessToken = Jwts.builder()
                 .setSubject(authentication.getName())
                 .claim("auth", authorities)
                 .setExpiration(accessTokenExpiresIn)
                 .signWith(SignatureAlgorithm.HS256, Base64.getEncoder().encodeToString(secretKey.getBytes())) // 알고리즘, 시크릿 키
                 .compact();
-        log.info("4");
 
         // Refresh Token 생성 후 해당 사용자의 DB에 저장한다.
         String refreshToken = Jwts.builder()
@@ -70,26 +64,18 @@ public class JwtTokenProvider {
                 .setExpiration(new Date(now + (86400000 * 3))) // 3일간만 유지합니다.
                 .signWith(SignatureAlgorithm.HS256, Base64.getEncoder().encodeToString(secretKey.getBytes())) // 알고리즘, 시크릿 키
                 .compact();
-        log.info("5");
 
 
-//해당 사용자 정보의 리플래쉬 토큰을 업데이트 해줌. 여기서 authentication.getName은 !
+        //해당 사용자 정보의 리프래쉬 토큰을 업데이트 해줌.
         Optional<Member> byMember = memberRepository.findByEmail(authentication.getName());
 
-        log.info(authentication.getName());
-        log.info("6");
-        log.info(byMember.toString());
-
         if (byMember.isPresent()) {
-            log.info("7");
             memberRepository.updateRefreshToken(byMember.get().getEmail(), refreshToken);
-            log.info("8");
         } else {
-            // 사용자 정보를 찾지 못한 경우에 대한 처리를 여기에 추가하세요.
-            log.info("9");
+            // 사용자 정보를 찾지 못한 경우에 대한 처리
             throw new CustomException(CustomExceptionCode.NOT_FOUND);
         }
-        log.info("10");
+
         //accesstoken 받았어, -> 이동
         return TokenDto.builder()
                 .accessToken(accessToken)
@@ -101,12 +87,11 @@ public class JwtTokenProvider {
         // 토큰 복호화
         Claims claims = parseClaims(accessToken);
 
-
         if (claims.get("auth") == null) {
             throw new RuntimeException("권한 정보가 없는 토큰입니다.");
         }
 
-        //플램버스는 무조건 유저 디비에서 따로 권한을 관리합니다.
+        // 유저 디비에서 따로 권한을 관리합니다.
         List<GrantedAuthority> authorities = Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"));
 
         // UserDetails 객체를 만들어서 Authentication 리턴
@@ -121,10 +106,10 @@ public class JwtTokenProvider {
             return true;
         } catch (io.jsonwebtoken.security.SecurityException | MalformedJwtException e) {
             log.info("올바른 형식의 토큰이 아님.", e);
-//            throw new CustomException(CustomExceptionCode.INVALID_JWT);
+            throw new CustomException(CustomExceptionCode.INVALID_JWT);
         } catch (ExpiredJwtException e) {
             log.info("토큰 만료됨.", e);
-//            throw new CustomException(CustomExceptionCode.EXPIRED_JWT);
+            throw new CustomException(CustomExceptionCode.EXPIRED_JWT);
         } catch (UnsupportedJwtException e) {
             log.info("Unsupported JWT Token", e);
         } catch (IllegalArgumentException e) {

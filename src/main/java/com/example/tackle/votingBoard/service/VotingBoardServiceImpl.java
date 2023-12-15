@@ -6,9 +6,9 @@ import com.example.tackle._enum.VotingStatus;
 import com.example.tackle.exception.CustomException;
 import com.example.tackle.member.entity.Member;
 import com.example.tackle.member.repository.MemberRepository;
-import com.example.tackle.point.Point;
-import com.example.tackle.point.PointRepository;
-import com.example.tackle.point.PointService;
+import com.example.tackle.point.entity.Point;
+import com.example.tackle.point.repository.PointRepository;
+import com.example.tackle.point.service.PointService;
 import com.example.tackle.revenue.RevenueRepository;
 import com.example.tackle.revenue.RevenueService;
 import com.example.tackle.voteItems.entity.VoteItems;
@@ -29,8 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
-//33
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -75,36 +75,38 @@ public class VotingBoardServiceImpl implements VotingBoardService {
 
 
         VotingBoard votingBoard = VotingBoard.builder()
-                    .categoryId(dto.getCategoryId())
-                    .totalBetAmount(0L)
-                    .content(dto.getContent())
-                    .createdAt(currentDateTime)
-                    .endDate(endDate)
-                    .idx(dto.getIdx())
-                    .votingImgUrl(dto.getVotingImgUrl())
-                    .title(dto.getTitle())
-                    .status(VotingStatus.ING)
-                    .votingDeadLine(votingDeadLineDays)
-                    .build();
+                .categoryId(dto.getCategoryId())
+                .totalBetAmount(0L)
+                .content(dto.getContent())
+                .createdAt(currentDateTime)
+                .endDate(endDate)
+                .nickname(member.getNickname())
+                .idx(dto.getIdx())
+                .votingImgUrl(dto.getVotingImgUrl())
+                .title(dto.getTitle())
+                .votingAmount(0L)
+                .status(VotingStatus.ING)
+                .votingDeadLine(votingDeadLineDays)
+                .build();
 
-            VotingBoard savedVotingBoard = votingBoardRepository.save(votingBoard);
+        VotingBoard savedVotingBoard = votingBoardRepository.save(votingBoard);
 
-            //게시글 작성시 1000P 차감
-            member.setPoint(member.getPoint() + BOARD_CREATE_COST);
-            memberRepository.save(member);
+        //게시글 작성시 1000P 차감
+        member.setPoint(member.getPoint() + BOARD_CREATE_COST);
+        memberRepository.save(member);
 
-            // 포인트 사용내역 저장
-            Point pointCreate = pointService.create(dto.getIdx(),BOARD_CREATE_COST, 0);
+        // 포인트 사용내역 저장
+        Point pointCreate = pointService.create(dto.getIdx(),BOARD_CREATE_COST, 0);
 
-            pointRepository.save(pointCreate);
+        pointRepository.save(pointCreate);
 
-            revenueService.create(-BOARD_CREATE_COST,1);
+        revenueService.create(-BOARD_CREATE_COST,1);
 
 
-            Long savedPostId = savedVotingBoard.getPostId();
+        Long savedPostId = savedVotingBoard.getPostId();
 
-            // 투표 항목 로직 (선택지 2개이상 선택)
-            voteItemsService.create(savedPostId,dto.getVoteItemsContent());
+        // 투표 항목 로직 (선택지 2개이상 선택)
+        voteItemsService.create(savedPostId,dto.getVoteItemsContent());
 
 
 
@@ -112,24 +114,117 @@ public class VotingBoardServiceImpl implements VotingBoardService {
     }
 
     @Override
-    public List<VotingBoardDto> getBoardList() {
-
-        List<VotingBoard> votingBoard = votingBoardRepository.findAll();
-
-
-        List<VotingBoardDto> votingBoardDtoList = of(votingBoard);
-
-
-        return votingBoardDtoList;
+    public List<VotingBoardDto> getBoardListByCategory(Long categoryId) {
+        if (categoryId != null) {
+            // categoryId가 제공된 경우 해당 카테고리의 게시글만 조회
+            return getBoardListByCategoryId(categoryId);
+        } else {
+            // categoryId가 제공되지 않은 경우 모든 게시글 조회
+            return getBoardList();
+        }
     }
+
+    private List<VotingBoardDto> getBoardListByCategoryId(Long categoryId) {
+
+        List<VotingBoard> votingBoard;
+
+        if (categoryId == 0) {
+            votingBoard = votingBoardRepository.findAllByOrderByVotingAmountDesc();
+        } else {
+            votingBoard = votingBoardRepository.findByCategoryId(categoryId);
+        }
+
+        List<VotingBoardDto> votingBoardList = new ArrayList<>();
+
+        for (VotingBoard x : votingBoard) {
+            List<VoteItems> voteItemsList = voteItemsRepository.findByPostId(x.getPostId());
+            List<String> voteItemsContent = voteItemsList.stream()
+                    .map(VoteItems::getContent)
+                    .collect(Collectors.toList());
+
+            VotingBoardDto dto = VotingBoardDto.builder()
+                    .createdAt(x.getCreatedAt())
+                    .categoryId(x.getCategoryId())
+                    .voteItemsContent(voteItemsContent)
+                    .postId(x.getPostId())
+                    .idx(x.getIdx())
+                    .status(x.getStatus())
+                    .title(x.getTitle())
+                    .votingDeadLine(x.getVotingDeadLine())
+                    .votingImgUrl(x.getVotingImgUrl())
+                    .votingResult(x.getVotingResult())
+                    .nickname(x.getNickname())
+                    .votingAmount(x.getVotingAmount())
+                    .bettingAmount(x.getTotalBetAmount())
+                    .content(x.getContent())
+                    .endDate(x.getEndDate())
+                    .build();
+
+            votingBoardList.add(dto);
+        }
+
+        return votingBoardList;
+    }
+
+    @Override
+    public List<VotingBoardDto> getBoardList() {
+        List<VotingBoard> votingBoards = votingBoardRepository.findAll();
+
+
+        List<VotingBoardDto> votingBoardList = new ArrayList<>();
+
+        for (VotingBoard x : votingBoards) {
+            List<String> voteItems = new ArrayList<>();
+            List<VoteItems> voteItemsList = voteItemsRepository.findByPostId(x.getPostId());
+
+            // 투표 항목 String 값
+            for (VoteItems y : voteItemsList){
+                voteItems.add(y.getContent());
+            }
+            VotingBoardDto dto = VotingBoardDto.builder()
+                    .createdAt(x.getCreatedAt())
+                    .categoryId(x.getCategoryId())
+                    .voteItemsContent(voteItems)
+                    .postId(x.getPostId())
+                    .idx(x.getIdx())
+                    .status(x.getStatus())
+                    .title(x.getTitle())
+                    .votingDeadLine(x.getVotingDeadLine())
+                    .votingImgUrl(x.getVotingImgUrl())
+                    .votingResult(x.getVotingResult())
+                    .nickname(x.getNickname())
+                    .votingAmount(x.getVotingAmount())
+                    .bettingAmount(x.getTotalBetAmount())
+                    .content(x.getContent())
+                    .endDate(x.getEndDate())
+                    .build();
+            votingBoardList.add(dto);
+        }
+        return votingBoardList;
+    }
+
+    @Override
+    public List<VotingBoardDto> getMyBoardList(String email) {
+        Member member = memberRepository.findByEmail(email)
+                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_USER));
+
+
+       List<VotingBoard> votingBoardList = votingBoardRepository.findByIdx(member.getIdx());
+
+        return of(votingBoardList);
+    }
+
 
     @Override
     public VotingBoardResponseDto getBoardInfo(Long postId, String email) {
 
         boolean isVoting = false;
         String id = "";
+//        String nickname = "";
         if(!email.isEmpty()){
-            id = memberRepository.findByEmail(email).get().getIdx();
+            Optional<Member> member  = memberRepository.findByEmail(email);
+            id = member.get().getIdx();
+//            nickname = member.get().getNickname();
 
             //로그인이 된 회원의 경우 투표를 한 게시글이면 isVoting 을 true로 반환해줌으로써
             // 투표화면이 아닌 투표비율이 뜨는 투표결과화면을 보여주게함.
@@ -196,6 +291,7 @@ public class VotingBoardServiceImpl implements VotingBoardService {
                 .idx(votingBoard.getIdx())
                 .createdAt(votingBoard.getCreatedAt())
                 .voteItemIdMap(voteItemIdMap)
+                .nickname(votingBoard.getNickname())
 //                .voteItemsId(itemIds)
                 .voteItemsContent(itemContents)
                 .endDate(votingBoard.getEndDate())
@@ -220,13 +316,13 @@ public class VotingBoardServiceImpl implements VotingBoardService {
                 .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_USER));
         // 해당 투표항목이 존재여부 확인
         VoteItems voteItems = voteItemsRepository.findById(dto.getItemId())
-                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND));
+                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_ITEMS));
 
         Long postId = voteItems.getPostId();
 
         // 해당 투표 게시글 존재여부 확인
         VotingBoard votingBoard = votingBoardRepository.findById(postId)
-                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND));
+                .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_BOARD));
 
         //투표를 이미 했는지 확인
         Optional<VoteResult> existingVoteResult = voteResultRepository.findByIdxAndItemId(dto.getIdx(),dto.getItemId());
@@ -238,26 +334,28 @@ public class VotingBoardServiceImpl implements VotingBoardService {
 
         // 투표 기간이 지났는지 확인
         if(votingBoard.getStatus() == VotingStatus.END) {
-            System.out.println("이미 end상태");
 
             throw new CustomException(CustomExceptionCode.EXPIRED_VOTE);
         } else {
-            // 투표 기한이 지났는지 확인
+
+            /**
+             * 투표 기한이 지났는지 확인  [ 메서드 ]
+             */
             boolean result = updateVotingStatusIfNeeded(votingBoard);
 
-
-            //기한이 지났으면.
+            //기한이 지났으면 false
             if(result == false){
 
-                // 투표자들 승패 결정
+                /**
+                 * 투표자들 승패 결정 [ 메서드 ]
+                 */
                 voterWL(dto.getPostId());
-
                 // 총 게시글 금액
                 long totalAmount = votingBoard.getTotalBetAmount();
-                //투표 결과에 따른 포인트 지급
+                /**
+                 * 투표 결과에 따른 포인트 지급 [ 메서드 ]
+                 */
                 distributePoint(postId,totalAmount);
-
-                // 사용자들 투표에 승리했는지안했는지 확인. 2023-11-03
 
                 throw new CustomException(CustomExceptionCode.EXPIRED_VOTE);
             }
@@ -268,7 +366,9 @@ public class VotingBoardServiceImpl implements VotingBoardService {
             throw new CustomException(CustomExceptionCode.NOT_ENOUGH_POINTS);
         }
 
-        // 투표시 베팅한 금액 체크 10000, 50000, 100000 제한
+        /**
+         * 투표시 베팅한 금액 체크 10000, 50000, 100000 제한    [ 메서드 ]
+         */
         boolean bettingValid = isBettingAmountValid(dto.getBettingPoint());
 
         if(!bettingValid){
@@ -290,13 +390,16 @@ public class VotingBoardServiceImpl implements VotingBoardService {
         voteResultRepository.save(voteResult);
 
         //포인트 테이블 추가
-        pointService.create(dto.getIdx(), dto.getBettingPoint(), 3);
+        pointService.create(dto.getIdx(), -dto.getBettingPoint(), 3);
         // 멤버 테이블 포인트 수정
         member.setPoint(member.getPoint() - dto.getBettingPoint());
         memberRepository.save(member);
         //투표 수 증가
         voteItems.setVoteCount(voteItems.getVoteCount() + 1);
         voteItemsRepository.save(voteItems);
+        // 게시글 총 투표수 증가
+        votingBoard.setVotingAmount(votingBoard.getVotingAmount() + 1);
+        votingBoardRepository.save(votingBoard);
 
 
         return true;
@@ -306,7 +409,7 @@ public class VotingBoardServiceImpl implements VotingBoardService {
     public boolean delete(String email, Long postId) {
         if(!email.isEmpty()) {
             Member member = memberRepository.findByEmail(email)
-                    .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND));
+                    .orElseThrow(() -> new CustomException(CustomExceptionCode.NOT_FOUND_USER));
 
             if(member.getRole() == 1){
                 if (votingBoardRepository.existsById(postId)) {
@@ -314,7 +417,7 @@ public class VotingBoardServiceImpl implements VotingBoardService {
                     votingBoardRepository.deleteById(postId);
                     return true;
                 } else{
-                    throw new CustomException(CustomExceptionCode.NOT_FOUND);
+                    throw new CustomException(CustomExceptionCode.NOT_FOUND_BOARD);
                 }
 
             } else {
@@ -326,8 +429,16 @@ public class VotingBoardServiceImpl implements VotingBoardService {
 
     }
 
+    @Override
+    public List<VotingBoard> search(String keyword) {
+        return votingBoardRepository.findByTitleContaining(keyword);
+    }
 
-    // 투표자 승패 업데이트 메서드
+
+    /**
+     * 투표자 승패 업데이트 메서드
+     * @param boardId
+     */
     public void voterWL (Long boardId){
 
         List<VoteResult> voteResultList = voteResultRepository.findByPostId(boardId);
@@ -386,8 +497,11 @@ public class VotingBoardServiceImpl implements VotingBoardService {
         }
     }
 
-
-    // 투표 기간이 지났으면 투표상태를 END로 변경 로직
+    /**
+     * 투표 기간이 지났으면 투표상태를 END로 변경 로직
+     * @param votingBoard
+     * @return
+     */
     public boolean updateVotingStatusIfNeeded(VotingBoard votingBoard) {
 
         LocalDateTime endDate = votingBoard.getEndDate();
@@ -396,22 +510,27 @@ public class VotingBoardServiceImpl implements VotingBoardService {
         // 기간이 만료된 경우 투표상태를 END 로 변경
         if (endDate != null && endDate.isBefore(currentDateTime)) {
             votingBoard.setStatus(VotingStatus.END);
-            System.out.println("END로 설정 ");
             votingBoardRepository.save(votingBoard);
-            System.out.println("db에 저장");
 
             return false;
         }
         return true;
     }
 
-    // 투표시 베팅한 금액 체크 10000, 50000, 100000 제한
+    /**
+     * 투표시 베팅한 금액 체크 1000, 5000, 10000 제한
+     * @param bettingPoint
+     * @return
+     */
     public boolean isBettingAmountValid(Long bettingPoint) {
-        return bettingPoint == 10000 || bettingPoint == 50000 || bettingPoint == 100000;
+        return bettingPoint == 1000 || bettingPoint == 5000 || bettingPoint == 10000;
     }
 
-
-    //  포인트 분배 메서드
+    /**
+     * 포인트 분배 메서드
+     * @param postId
+     * @param totalAmount
+     */
     public void distributePoint(Long postId, Long totalAmount){
         // 수수료를 공제한 총 상금 베팅금
         long totalPrize = totalAmount;
@@ -518,6 +637,7 @@ public class VotingBoardServiceImpl implements VotingBoardService {
                 .votingResult(votingBoard.getVotingResult())
                 .content(votingBoard.getContent())
                 .title(votingBoard.getTitle())
+                .nickname(votingBoard.getNickname())
                 .idx(votingBoard.getIdx())
                 .endDate(votingBoard.getEndDate())
                 .postId(votingBoard.getPostId())
@@ -528,3 +648,5 @@ public class VotingBoardServiceImpl implements VotingBoardService {
 
 
 }
+
+

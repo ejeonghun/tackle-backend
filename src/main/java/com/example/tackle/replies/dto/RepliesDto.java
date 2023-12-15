@@ -13,7 +13,9 @@ import java.time.LocalDateTime;
 public class RepliesDto {
     private Long repliesId;
 
-    private Long idx; // 카카오 고유번호 12자리
+    private String idx; // 카카오 고유번호 12자리
+
+    private String nickname;
     private Long postId;
 
     private String comment;

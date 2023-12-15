@@ -5,7 +5,7 @@ import com.example.tackle.dto.ResultDTO;
 import com.example.tackle.exception.CustomException;
 import com.example.tackle.replies.dto.RepliesDto;
 import com.example.tackle.replies.service.RepliesService;
-import com.example.tackle.voteResult.dto.VoteResultDto;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +17,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/replies")
+@Tag(name = "댓글 API", description = "")
 public class RepliesController {
 
     private final RepliesService repliesService;
@@ -41,18 +42,18 @@ public class RepliesController {
         }
     }
 
-    @GetMapping("/myinfo")
-    public List<RepliesDto> getMyReplies(@RequestParam Long idx ){
-        try{
-            List<RepliesDto> myReplies = repliesService.getMyRepliesInfo(idx);
-            return myReplies;
-        } catch (Exception e){
-            return (List<RepliesDto>) ResultDTO.of(false, ApiResponseCode.INTERNAL_SERVER_ERROR.getCode(), "댓글 ㅇ 실패.", null);
-        }
-    }
+//    @GetMapping("/myinfo")
+//    public List<RepliesDto> getMyReplies(@RequestParam String idx ){
+//        try{
+//            List<RepliesDto> myReplies = repliesService.getMyRepliesInfo(idx);
+//            return myReplies;
+//        } catch (Exception e){
+//            return (List<RepliesDto>) ResultDTO.of(false, ApiResponseCode.INTERNAL_SERVER_ERROR.getCode(), "댓글 실패.", null);
+//        }
+//    }
 
     @DeleteMapping("/delete")
-    public ResultDTO delete(@RequestParam Long repliesId, Long idx) {
+    public ResultDTO delete(@RequestParam Long repliesId, String idx) {
         try {
             return ResultDTO.of(repliesService.delete(repliesId, idx), ApiResponseCode.SUCCESS.getCode(), "댓글 삭제 완료.", null);
         } catch (CustomException e) {
@@ -61,7 +62,7 @@ public class RepliesController {
     }
 
     @PostMapping("/update")
-    public ResultDTO update(@RequestParam Long repliesId, Long idx, @RequestBody RepliesDto dto){
+    public ResultDTO update(@RequestParam Long repliesId, String idx, @RequestBody RepliesDto dto){
         try {
             return ResultDTO.of(repliesService.update(repliesId, idx, dto), ApiResponseCode.SUCCESS.getCode(), "댓글 수정 완료.", null);
         } catch (CustomException e) {
